@@ -92,7 +92,7 @@ export function GamePage({ name }: GamePageProps) {
             onPlay={() => void handlePlay()}
             onFullscreen={toggleFullscreen}
             onClose={() => setLaunchUrl(null)}
-            canPlay={Boolean(player)}
+            canPlay={Boolean(player) || !game.requiresLogin}
           />
         </section>
 

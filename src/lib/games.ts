@@ -1,5 +1,6 @@
 import { apiRequest, resolveAssetUrl } from '@/lib/api';
 import { API_BASE_URL } from '@/lib/config';
+import { BUFFALO_ART_URL, BUFFALO_GAME_NAME, buildBuffaloLaunchUrl } from '@/lib/buffalo';
 
 export interface Game {
   name: string;
@@ -8,6 +9,7 @@ export interface Game {
   category: string;
   thumbnail: string | null;
   thumbnailFallback: string | null;
+  requiresLogin: boolean;
 }
 
 type RawRecord = Record<string, unknown>;
@@ -16,6 +18,16 @@ const MAX_CATALOG_PAGES = 20;
 
 // The backend ships no FirePhoenixVP assets; listing it would only produce broken launches.
 const UNAVAILABLE_GAME_PATTERN = /fire\s*phoenix/i;
+
+const BUFFALO_GAME: Game = {
+  name: BUFFALO_GAME_NAME,
+  title: 'African Buffalo',
+  provider: 'Buffalo Studio',
+  category: 'Slots',
+  thumbnail: BUFFALO_ART_URL,
+  thumbnailFallback: null,
+  requiresLogin: false,
+};
 
 function asRecord(value: unknown): RawRecord | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as RawRecord) : null;
@@ -61,6 +73,7 @@ function normalizeGame(raw: RawRecord): Game | null {
     category: pickString(raw, ['category', 'type', 'genre']) ?? 'Slots',
     thumbnail: `${API_BASE_URL}/game-icons/${encodeURIComponent(name)}.jpg`,
     thumbnailFallback: resolveAssetUrl(pickString(raw, ['thumbnail', 'image', 'cover', 'icon', 'preview'])),
+    requiresLogin: true,
   };
 }
 
@@ -68,7 +81,7 @@ function isAvailable(game: Game): boolean {
   return !UNAVAILABLE_GAME_PATTERN.test(`${game.name} ${game.title} ${game.provider}`);
 }
 
-export async function fetchGames(): Promise<Game[]> {
+async function fetchApiGames(): Promise<Game[]> {
   const games: Game[] = [];
   let page = 1;
   let lastPage = 1;
@@ -87,7 +100,14 @@ export async function fetchGames(): Promise<Game[]> {
   return games.filter(isAvailable);
 }
 
+export async function fetchGames(): Promise<Game[]> {
+  const apiGames = await fetchApiGames().catch(() => []);
+  return [BUFFALO_GAME, ...apiGames];
+}
+
 export async function fetchGame(name: string): Promise<Game | null> {
+  if (name === BUFFALO_GAME_NAME) return BUFFALO_GAME;
+
   const payload = await apiRequest<unknown>(`/games/${encodeURIComponent(name)}`);
   const record = asRecord(payload);
   const raw = record && asRecord(record.data) ? asRecord(record.data) : record;
@@ -95,6 +115,8 @@ export async function fetchGame(name: string): Promise<Game | null> {
 }
 
 export async function launchGame(name: string): Promise<string> {
+  if (name === BUFFALO_GAME_NAME) return buildBuffaloLaunchUrl();
+
   const payload = await apiRequest<unknown>(`/games/${encodeURIComponent(name)}/launch`);
   const record = asRecord(payload);
   const nested = record ? asRecord(record.data) : null;
