@@ -31,13 +31,13 @@ function pickToken(payload: unknown): string | null {
 
 function toPlayer(payload: unknown): Player | null {
   const record = unwrap(payload);
-  const user = asRecord(record.user) ?? record;
-  const username =
-    [user.username, user.name, user.login, user.email].find(
-      (value): value is string => typeof value === 'string' && value.length > 0,
-    ) ?? null;
+  const username = [record.username, record.name, record.login, record.email].find(
+    (value): value is string => typeof value === 'string' && value.length > 0,
+  );
   if (!username) return null;
-  const balance = [user.balance, record.balance].find((value) => typeof value === 'number' || typeof value === 'string');
+  const balance = [record.balance].find(
+    (value) => typeof value === 'number' || (typeof value === 'string' && value !== ''),
+  );
   const numericBalance = balance === undefined ? null : Number(balance);
   return { username, balance: numericBalance === null || Number.isNaN(numericBalance) ? null : numericBalance };
 }

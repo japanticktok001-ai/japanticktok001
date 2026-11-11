@@ -1,5 +1,4 @@
 import { apiRequest, resolveAssetUrl } from '@/lib/api';
-import { API_PREFIX } from '@/lib/config';
 import { BUFFALO_ART_URL, BUFFALO_GAME_NAME, buildBuffaloLaunchUrl } from '@/lib/buffalo';
 
 export interface Game {
@@ -45,30 +44,39 @@ function pickString(record: RawRecord, keys: string[]): string | null {
   return null;
 }
 
-function pickBoolean(record: RawRecord, keys: string[]): boolean {
-  for (const key of keys) {
-    const value = record[key];
-    if (typeof value === 'boolean') return value;
-    if (value === 1 || value === '1' || value === 'true') return true;
+// Provider = first non-numeric entry in the categories array (e.g. "egt", "novomatic").
+function deriveProvider(raw: RawRecord): string {
+  const explicit = pickString(raw, ['provider', 'provider_name', 'vendor']);
+  if (explicit) return explicit;
+
+  const categories = raw.categories;
+  if (Array.isArray(categories)) {
+    for (const entry of categories) {
+      if (typeof entry === 'string' && isNaN(Number(entry)) && entry) {
+        return entry.charAt(0).toUpperCase() + entry.slice(1);
+      }
+    }
   }
-  return false;
+  return 'Featured';
 }
 
 function normalizeGame(raw: RawRecord): Game | null {
   const name = pickString(raw, ['name', 'game_name', 'slug', 'game']);
   if (!name) return null;
 
-  const image = resolveAssetUrl(pickString(raw, ['image', 'icon', 'thumbnail', 'cover']));
+  const image = resolveAssetUrl(pickString(raw, ['image', 'image_url', 'icon', 'thumbnail', 'cover']));
+  const label = pickString(raw, ['label'])?.toLowerCase();
+  const gamebank = pickString(raw, ['gamebank', 'type', 'category', 'genre']);
 
   return {
     name,
     title: pickString(raw, ['title', 'label', 'display_name']) ?? name,
-    provider: pickString(raw, ['provider', 'provider_name', 'vendor']) ?? 'Featured',
-    category: pickString(raw, ['type', 'category', 'genre']) ?? 'Slots',
+    provider: deriveProvider(raw),
+    category: gamebank ? gamebank.charAt(0).toUpperCase() + gamebank.slice(1) : 'Slots',
     thumbnail: image,
-    thumbnailFallback: `${API_PREFIX}/game-icons/${encodeURIComponent(name)}.jpg`,
-    isHot: pickBoolean(raw, ['hot', 'is_hot', 'featured']),
-    isNew: pickBoolean(raw, ['new', 'is_new']),
+    thumbnailFallback: resolveAssetUrl(`/frontend/Default/ico/${encodeURIComponent(name)}.jpg`),
+    isHot: label === 'hot',
+    isNew: label === 'new',
     requiresLogin: true,
   };
 }
@@ -117,13 +125,28 @@ export async function fetchGames(): Promise<Game[]> {
   return [BUFFALO_GAME, ...apiGames];
 }
 
-export async function fetchCategories(): Promise<string[]> {
+export interface Category {
+  id: number;
+  title: string;
+  slug: string;
+}
+
+export async function fetchCategories(): Promise<Category[]> {
   const payload = await apiRequest<unknown>('/mobile/games/categories');
   const record = asRecord(payload) ?? {};
-  const list = Array.isArray(record.categories) ? record.categories : Array.isArray(record.data) ? record.data : [];
+  const list = Array.isArray(record.categories) ? record.categories : [];
   return list
-    .filter((item): item is string => typeof item === 'string')
-    .sort((a, b) => a.localeCompare(b));
+    .map((item) => {
+      const rec = asRecord(item);
+      if (!rec) return null;
+      const id = Number(rec.id);
+      const title = typeof rec.title === 'string' ? rec.title : '';
+      const slug = typeof rec.slug === 'string' ? rec.slug : '';
+      if (!title || !slug) return null;
+      return { id: Number.isFinite(id) ? id : 0, title, slug };
+    })
+    .filter((item): item is Category => item !== null)
+    .sort((a, b) => a.title.localeCompare(b.title));
 }
 
 export async function fetchGame(name: string): Promise<Game | null> {
@@ -142,8 +165,8 @@ export async function launchGame(name: string): Promise<string> {
   const record = asRecord(payload);
   const nested = record ? asRecord(record.data) : null;
   const url =
-    (record && pickString(record, ['url', 'launch_url', 'game_url'])) ||
-    (nested && pickString(nested, ['url', 'launch_url', 'game_url']));
+    (record && pickString(record, ['url', 'launcher_url', 'launch_url', 'game_url'])) ||
+    (nested && pickString(nested, ['url', 'launcher_url', 'launch_url', 'game_url']));
   if (!url) throw new Error('The game could not be launched right now.');
   return url;
 }

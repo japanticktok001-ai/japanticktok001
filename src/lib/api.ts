@@ -1,4 +1,4 @@
-import { API_PREFIX } from '@/lib/config';
+import { API_PREFIX, SITE_ORIGIN } from '@/lib/config';
 
 const TOKEN_KEY = 'token';
 
@@ -23,7 +23,7 @@ export function storeToken(token: string | null) {
 
 export function resolveAssetUrl(url: string | null): string | null {
   if (!url) return null;
-  if (url.startsWith('/')) return `${API_PREFIX}${url}`;
+  if (url.startsWith('/')) return `${SITE_ORIGIN}${url}`;
   return url;
 }
 
