@@ -1,18 +1,22 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { fetchProfile, login as loginRequest, logout as logoutRequest, type Player } from '@/lib/auth';
 import { getStoredToken, storeToken } from '@/lib/api';
+import { refreshBalance } from '@/lib/player';
 
 interface AuthContextValue {
   player: Player | null;
+  currency: string;
   isReady: boolean;
   login: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  refreshPlayerBalance: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [player, setPlayer] = useState<Player | null>(null);
+  const [currency, setCurrency] = useState('USD');
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
@@ -21,7 +25,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     fetchProfile()
-      .then((profile) => setPlayer(profile))
+      .then((profile) => {
+        if (profile) setPlayer(profile);
+      })
       .catch(() => storeToken(null))
       .finally(() => setIsReady(true));
   }, []);
@@ -42,7 +48,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setPlayer(null);
   }, []);
 
-  const value = useMemo(() => ({ player, isReady, login, logout }), [player, isReady, login, logout]);
+  const refreshPlayerBalance = useCallback(async () => {
+    try {
+      const info = await refreshBalance();
+      setCurrency(info.currency);
+      setPlayer((prev) => (prev ? { ...prev, balance: info.balance } : prev));
+    } catch {
+      // Keep the last known balance if the refresh fails.
+    }
+  }, []);
+
+  const value = useMemo(
+    () => ({ player, currency, isReady, login, logout, refreshPlayerBalance }),
+    [player, currency, isReady, login, logout, refreshPlayerBalance],
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

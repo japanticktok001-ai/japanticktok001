@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
-import { Search, X } from 'lucide-react';
+import { Heart, Search, X } from 'lucide-react';
 import { GameGrid } from '@/components/games/GameGrid';
 import { useGames } from '@/hooks/useGames';
+import { useAuth } from '@/context/AuthContext';
+import { useFavorites } from '@/context/FavoritesContext';
 import { deriveCategories, deriveProviders } from '@/lib/games';
 import { navigate, useHashPath } from '@/lib/router';
 
@@ -12,11 +14,16 @@ function readProviderParam(path: string): string {
   return new URLSearchParams(query).get('provider') ?? ALL;
 }
 
+type Tab = 'all' | 'favorites';
+
 export function GamesPage() {
   const path = useHashPath();
   const { games, isLoading, error, reload } = useGames();
+  const { player } = useAuth();
+  const { favorites, isReady: favoritesReady } = useFavorites();
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState(ALL);
+  const [tab, setTab] = useState<Tab>('all');
   const provider = readProviderParam(path);
 
   const providers = useMemo(() => deriveProviders(games), [games]);
@@ -25,16 +32,22 @@ export function GamesPage() {
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     return games.filter((game) => {
+      if (tab === 'favorites' && !favorites.has(game.name)) return false;
       if (provider !== ALL && game.provider !== provider) return false;
       if (category !== ALL && game.category !== category) return false;
       if (term && !`${game.title} ${game.provider}`.toLowerCase().includes(term)) return false;
       return true;
     });
-  }, [games, provider, category, search]);
+  }, [games, provider, category, search, tab, favorites]);
 
   const setProvider = (name: string) => {
     navigate(name === ALL ? '/games' : `/games?provider=${encodeURIComponent(name)}`);
   };
+
+  const tabs: { id: Tab; label: string; icon: typeof Heart | null }[] = [
+    { id: 'all', label: 'All games', icon: null },
+    { id: 'favorites', label: 'Favorites', icon: Heart },
+  ];
 
   return (
     <div className="flex flex-col gap-8">
@@ -45,6 +58,45 @@ export function GamesPage() {
           {isLoading ? 'Loading the library...' : `${filtered.length} of ${games.length} games`}
         </p>
       </header>
+
+      <div className="flex gap-2">
+        {tabs.map((item) => {
+          const Icon = item.icon;
+          const disabled = item.id === 'favorites' && !player;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              disabled={disabled}
+              onClick={() => setTab(item.id)}
+              className={`flex items-center gap-2 rounded-full px-5 py-2 text-sm font-semibold transition-all duration-200 ${
+                tab === item.id
+                  ? 'bg-amber-400 text-slate-950 shadow-md shadow-amber-500/30'
+                  : disabled
+                    ? 'bg-white/5 text-slate-500'
+                    : 'bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'
+              }`}
+            >
+              {Icon && <Icon className="h-4 w-4" />}
+              {item.label}
+              {item.id === 'favorites' && player && favoritesReady && (
+                <span className="rounded-full bg-black/20 px-2 py-0.5 text-xs">{favorites.size}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {tab === 'favorites' && !player && (
+        <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-6 text-center">
+          <p className="text-slate-400">
+            You need to be logged in to see your favorites.{' '}
+            <button type="button" onClick={() => navigate('/login')} className="font-semibold text-amber-400 hover:text-amber-300">
+              Log in
+            </button>
+          </p>
+        </div>
+      )}
 
       <div className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-slate-900/70 p-4 backdrop-blur sm:p-5">
         <label className="relative block">
@@ -78,7 +130,7 @@ export function GamesPage() {
         isLoading={isLoading}
         error={error}
         onRetry={reload}
-        emptyMessage="No games match your search. Try a different filter."
+        emptyMessage={tab === 'favorites' ? 'No favorite games yet. Tap the heart on a game to add it here.' : 'No games match your search. Try a different filter.'}
       />
     </div>
   );

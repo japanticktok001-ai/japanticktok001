@@ -1,19 +1,19 @@
 import { useState } from 'react';
-import { Crown, LogIn, LogOut, Menu, Wallet, X } from 'lucide-react';
+import { Crown, LogIn, LogOut, Menu, RefreshCw, User, Wallet, X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { navigate, useHashPath } from '@/lib/router';
 
 const NAV_LINKS = [
   { label: 'Home', path: '/' },
   { label: 'Games', path: '/games' },
+  { label: 'Account', path: '/account' },
 ];
-
-const currency = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' });
 
 export function SiteHeader() {
   const path = useHashPath();
-  const { player, logout } = useAuth();
+  const { player, currency, logout, refreshPlayerBalance } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const go = (target: string) => {
     setMenuOpen(false);
@@ -21,6 +21,25 @@ export function SiteHeader() {
   };
 
   const isActive = (target: string) => (target === '/' ? path === '/' : path.startsWith(target));
+
+  const formatBalance = (balance: number | null) => {
+    if (balance === null) return '';
+    try {
+      return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(balance);
+    } catch {
+      return `${balance.toLocaleString()} ${currency}`;
+    }
+  };
+
+  const handleRefresh = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      await refreshPlayerBalance();
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   return (
     <header className="sticky top-0 z-50 border-b border-white/10 bg-slate-950/80 backdrop-blur-xl">
@@ -55,8 +74,23 @@ export function SiteHeader() {
               <span className="flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-4 py-2 text-sm text-emerald-200">
                 <Wallet className="h-4 w-4" />
                 <span className="font-semibold">{player.username}</span>
-                {player.balance !== null && <span className="text-emerald-300">{currency.format(player.balance)}</span>}
+                {player.balance !== null && <span className="text-emerald-300">{formatBalance(player.balance)}</span>}
+                <button
+                  type="button"
+                  aria-label="Refresh balance"
+                  onClick={() => void handleRefresh()}
+                  className="ml-1 text-emerald-300/70 transition-transform hover:text-emerald-200"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+                </button>
               </span>
+              <button
+                type="button"
+                onClick={() => go('/account')}
+                className="flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-white/5 hover:text-white"
+              >
+                <User className="h-4 w-4" />
+              </button>
               <button
                 type="button"
                 onClick={() => void logout()}
@@ -107,7 +141,17 @@ export function SiteHeader() {
               <>
                 <div className="mt-2 flex items-center justify-between rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-emerald-200">
                   <span className="font-semibold">{player.username}</span>
-                  {player.balance !== null && <span>{currency.format(player.balance)}</span>}
+                  <div className="flex items-center gap-2">
+                    {player.balance !== null && <span>{formatBalance(player.balance)}</span>}
+                    <button
+                      type="button"
+                      aria-label="Refresh balance"
+                      onClick={() => void handleRefresh()}
+                      className="text-emerald-300/70 hover:text-emerald-200"
+                    >
+                      <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+                    </button>
+                  </div>
                 </div>
                 <button
                   type="button"
