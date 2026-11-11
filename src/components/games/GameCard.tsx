@@ -1,5 +1,5 @@
 import { useRef, useState, type MouseEvent } from 'react';
-import { Play } from 'lucide-react';
+import { Flame, Play, Sparkles } from 'lucide-react';
 import { navigate } from '@/lib/router';
 import type { Game } from '@/lib/games';
 
@@ -11,10 +11,15 @@ interface GameCardProps {
 export function GameCard({ game, index = 0 }: GameCardProps) {
   const cardRef = useRef<HTMLButtonElement>(null);
   const [imageSrc, setImageSrc] = useState(game.thumbnail);
+  const [triedFallback, setTriedFallback] = useState(false);
 
   const handleImageError = () => {
-    if (imageSrc !== game.thumbnailFallback) setImageSrc(game.thumbnailFallback);
-    else setImageSrc(null);
+    if (!triedFallback && game.thumbnailFallback) {
+      setTriedFallback(true);
+      setImageSrc(game.thumbnailFallback);
+    } else {
+      setImageSrc(null);
+    }
   };
 
   const handleMove = (event: MouseEvent<HTMLButtonElement>) => {
@@ -57,6 +62,20 @@ export function GameCard({ game, index = 0 }: GameCardProps) {
           </div>
         )}
         <div className="shine pointer-events-none absolute inset-0" />
+        {(game.isHot || game.isNew) && (
+          <div className="absolute left-3 top-3 flex gap-1.5">
+            {game.isHot && (
+              <span className="flex items-center gap-1 rounded-full bg-rose-500/90 px-2 py-0.5 text-xs font-semibold text-white shadow-lg">
+                <Flame className="h-3 w-3" /> Hot
+              </span>
+            )}
+            {game.isNew && (
+              <span className="flex items-center gap-1 rounded-full bg-emerald-500/90 px-2 py-0.5 text-xs font-semibold text-white shadow-lg">
+                <Sparkles className="h-3 w-3" /> New
+              </span>
+            )}
+          </div>
+        )}
         <div className="absolute inset-0 flex items-center justify-center bg-slate-950/60 opacity-0 backdrop-blur-[2px] transition-opacity duration-300 group-hover:opacity-100 group-focus-visible:opacity-100">
           <span className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-400 text-slate-950 shadow-lg shadow-amber-500/40 transition-transform duration-300 group-hover:scale-100 scale-75">
             <Play className="h-6 w-6 fill-current" />

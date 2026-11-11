@@ -17,10 +17,14 @@ function unwrap(payload: unknown): RawRecord {
 }
 
 function pickToken(payload: unknown): string | null {
-  const record = unwrap(payload);
-  for (const key of ['token', 'access_token', 'api_token']) {
-    const value = record[key];
-    if (typeof value === 'string' && value) return value;
+  const record = asRecord(payload) ?? {};
+  const nested = asRecord(record.data);
+  for (const candidate of [record, nested]) {
+    if (!candidate) continue;
+    for (const key of ['token', 'access_token', 'api_token']) {
+      const value = candidate[key];
+      if (typeof value === 'string' && value) return value;
+    }
   }
   return null;
 }
@@ -39,7 +43,7 @@ function toPlayer(payload: unknown): Player | null {
 }
 
 export async function login(username: string, password: string): Promise<{ token: string | null; player: Player | null }> {
-  const payload = await apiRequest<unknown>('/login', {
+  const payload = await apiRequest<unknown>('/mobile/login', {
     method: 'POST',
     body: JSON.stringify({ username, password }),
   });
@@ -47,10 +51,10 @@ export async function login(username: string, password: string): Promise<{ token
 }
 
 export async function fetchProfile(): Promise<Player | null> {
-  const payload = await apiRequest<unknown>('/profile');
+  const payload = await apiRequest<unknown>('/mobile/profile');
   return toPlayer(payload);
 }
 
 export async function logout(): Promise<void> {
-  await apiRequest<unknown>('/logout', { method: 'POST' });
+  await apiRequest<unknown>('/mobile/logout', { method: 'POST' });
 }

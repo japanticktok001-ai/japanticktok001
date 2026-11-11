@@ -1,6 +1,6 @@
-import { API_BASE_URL, API_PREFIX } from '@/lib/config';
+import { API_PREFIX } from '@/lib/config';
 
-const TOKEN_KEY = 'casino.authToken';
+const TOKEN_KEY = 'token';
 
 export class ApiError extends Error {
   status: number;
@@ -13,17 +13,17 @@ export class ApiError extends Error {
 }
 
 export function getStoredToken(): string | null {
-  return sessionStorage.getItem(TOKEN_KEY);
+  return localStorage.getItem(TOKEN_KEY);
 }
 
 export function storeToken(token: string | null) {
-  if (token) sessionStorage.setItem(TOKEN_KEY, token);
-  else sessionStorage.removeItem(TOKEN_KEY);
+  if (token) localStorage.setItem(TOKEN_KEY, token);
+  else localStorage.removeItem(TOKEN_KEY);
 }
 
 export function resolveAssetUrl(url: string | null): string | null {
   if (!url) return null;
-  if (url.startsWith('/')) return `${API_BASE_URL}${url}`;
+  if (url.startsWith('/')) return `${API_PREFIX}${url}`;
   return url;
 }
 

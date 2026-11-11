@@ -1,5 +1,5 @@
 import { apiRequest, resolveAssetUrl } from '@/lib/api';
-import { API_BASE_URL } from '@/lib/config';
+import { API_PREFIX } from '@/lib/config';
 import { BUFFALO_ART_URL, BUFFALO_GAME_NAME, buildBuffaloLaunchUrl } from '@/lib/buffalo';
 
 export interface Game {
@@ -9,6 +9,8 @@ export interface Game {
   category: string;
   thumbnail: string | null;
   thumbnailFallback: string | null;
+  isHot: boolean;
+  isNew: boolean;
   requiresLogin: boolean;
 }
 
@@ -26,6 +28,8 @@ const BUFFALO_GAME: Game = {
   category: 'Slots',
   thumbnail: BUFFALO_ART_URL,
   thumbnailFallback: null,
+  isHot: true,
+  isNew: false,
   requiresLogin: false,
 };
 
@@ -41,38 +45,30 @@ function pickString(record: RawRecord, keys: string[]): string | null {
   return null;
 }
 
-function extractList(payload: unknown): RawRecord[] {
-  if (Array.isArray(payload)) return payload.map(asRecord).filter((item): item is RawRecord => item !== null);
-
-  const record = asRecord(payload);
-  if (!record) return [];
-
-  for (const key of ['data', 'games', 'items', 'results']) {
-    if (key in record) {
-      const nested = extractList(record[key]);
-      if (nested.length) return nested;
-    }
+function pickBoolean(record: RawRecord, keys: string[]): boolean {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'boolean') return value;
+    if (value === 1 || value === '1' || value === 'true') return true;
   }
-  return [];
-}
-
-function readLastPage(payload: unknown): number {
-  const record = asRecord(payload);
-  const lastPage = record ? Number(record.last_page) : NaN;
-  return Number.isFinite(lastPage) && lastPage > 1 ? lastPage : 1;
+  return false;
 }
 
 function normalizeGame(raw: RawRecord): Game | null {
   const name = pickString(raw, ['name', 'game_name', 'slug', 'game']);
   if (!name) return null;
 
+  const image = resolveAssetUrl(pickString(raw, ['image', 'icon', 'thumbnail', 'cover']));
+
   return {
     name,
-    title: pickString(raw, ['title', 'display_name', 'label']) ?? name,
+    title: pickString(raw, ['title', 'label', 'display_name']) ?? name,
     provider: pickString(raw, ['provider', 'provider_name', 'vendor']) ?? 'Featured',
-    category: pickString(raw, ['category', 'type', 'genre']) ?? 'Slots',
-    thumbnail: `${API_BASE_URL}/game-icons/${encodeURIComponent(name)}.jpg`,
-    thumbnailFallback: resolveAssetUrl(pickString(raw, ['thumbnail', 'image', 'cover', 'icon', 'preview'])),
+    category: pickString(raw, ['type', 'category', 'genre']) ?? 'Slots',
+    thumbnail: image,
+    thumbnailFallback: `${API_PREFIX}/game-icons/${encodeURIComponent(name)}.jpg`,
+    isHot: pickBoolean(raw, ['hot', 'is_hot', 'featured']),
+    isNew: pickBoolean(raw, ['new', 'is_new']),
     requiresLogin: true,
   };
 }
@@ -81,23 +77,39 @@ function isAvailable(game: Game): boolean {
   return !UNAVAILABLE_GAME_PATTERN.test(`${game.name} ${game.title} ${game.provider}`);
 }
 
+interface GamesPage {
+  games: RawRecord[];
+  lastPage: number;
+}
+
+async function fetchGamesPage(page: number): Promise<GamesPage> {
+  const payload = await apiRequest<unknown>(`/mobile/games?limit=500&page=${page}`);
+  const record = asRecord(payload) ?? {};
+  const list = Array.isArray(record.games)
+    ? record.games.map(asRecord).filter((item): item is RawRecord => item !== null)
+    : [];
+  const lastPage = Number(record.last_page);
+  return { games: list, lastPage: Number.isFinite(lastPage) && lastPage > 1 ? lastPage : 1 };
+}
+
 async function fetchApiGames(): Promise<Game[]> {
+  const firstPage = await fetchGamesPage(1);
   const games: Game[] = [];
-  let page = 1;
-  let lastPage = 1;
 
-  do {
-    const payload = await apiRequest<unknown>(`/games?page=${page}`);
-    games.push(
-      ...extractList(payload)
-        .map(normalizeGame)
-        .filter((game): game is Game => game !== null),
-    );
-    lastPage = readLastPage(payload);
-    page += 1;
-  } while (page <= lastPage && page <= MAX_CATALOG_PAGES);
+  const processPage = (page: GamesPage) => {
+    for (const raw of page.games) {
+      const game = normalizeGame(raw);
+      if (game && isAvailable(game)) games.push(game);
+    }
+  };
 
-  return games.filter(isAvailable);
+  processPage(firstPage);
+
+  for (let page = 2; page <= firstPage.lastPage && page <= MAX_CATALOG_PAGES; page += 1) {
+    processPage(await fetchGamesPage(page));
+  }
+
+  return games;
 }
 
 export async function fetchGames(): Promise<Game[]> {
@@ -105,10 +117,19 @@ export async function fetchGames(): Promise<Game[]> {
   return [BUFFALO_GAME, ...apiGames];
 }
 
+export async function fetchCategories(): Promise<string[]> {
+  const payload = await apiRequest<unknown>('/mobile/games/categories');
+  const record = asRecord(payload) ?? {};
+  const list = Array.isArray(record.categories) ? record.categories : Array.isArray(record.data) ? record.data : [];
+  return list
+    .filter((item): item is string => typeof item === 'string')
+    .sort((a, b) => a.localeCompare(b));
+}
+
 export async function fetchGame(name: string): Promise<Game | null> {
   if (name === BUFFALO_GAME_NAME) return BUFFALO_GAME;
 
-  const payload = await apiRequest<unknown>(`/games/${encodeURIComponent(name)}`);
+  const payload = await apiRequest<unknown>(`/mobile/games/${encodeURIComponent(name)}`);
   const record = asRecord(payload);
   const raw = record && asRecord(record.data) ? asRecord(record.data) : record;
   return raw ? normalizeGame(raw) : null;
@@ -117,7 +138,7 @@ export async function fetchGame(name: string): Promise<Game | null> {
 export async function launchGame(name: string): Promise<string> {
   if (name === BUFFALO_GAME_NAME) return buildBuffaloLaunchUrl();
 
-  const payload = await apiRequest<unknown>(`/games/${encodeURIComponent(name)}/launch`);
+  const payload = await apiRequest<unknown>(`/mobile/games/${encodeURIComponent(name)}/launch`);
   const record = asRecord(payload);
   const nested = record ? asRecord(record.data) : null;
   const url =
